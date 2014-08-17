@@ -1,0 +1,74 @@
+---
+- hosts: vpc_ipsec
+  sudo: true
+  gather_facts: no
+  user: ec2-user
+  tasks: 
+    
+    - name: "Install OpenSwan RPM"
+      yum: name=openswan state=latest
+  
+    - name: "Add IPSec Config"
+      copy:
+        src=files/ipsec.conf
+        dest=/etc/ipsec.conf
+        owner=root group=root mode=0644
+
+- hosts: vpc_east_ipsec  
+  sudo: true
+  gather_facts: no
+  user: ec2-user
+
+  tasks: 
+
+    - name: "Install VPC East<->West Tunnel Config"
+      copy: 
+        src=files/vpc_east_to_vpc_west.conf
+        dest=/etc/ipsec.d/vpc_east_to_vpc_west.conf
+        owner=root group=root mode=0600
+    - name: "Install VPC East<->West Tunnel Secrets"
+      copy:
+        src=files/vpc_east_to_vpc_west.secrets
+        dest=/etc/ipsec.d/vpc_east_to_vpc_west.secrets
+        owner=root group=root mode=0600
+
+- hosts: vpc_west_ipsec  
+  sudo: true
+  gather_facts: no
+  user: ec2-user
+
+  tasks: 
+
+    - name: "Install VPC West<->East Tunnel Config"
+      copy: 
+        src=files/vpc_west_to_vpc_east.conf
+        dest=/etc/ipsec.d/vpc_west_to_vpc_east.conf
+        owner=root group=root mode=0600
+    - name: "Install VPC West<->East Tunnel Secrets"
+      copy: 
+        src=files/vpc_west_to_vpc_east.secrets
+        dest=/etc/ipsec.d/vpc_west_to_vpc_east.secrets
+        owner=root group=root mode=0600
+
+
+- hosts: vpc_ipsec
+  sudo: true
+  gather_facts: no
+  user: ec2-user
+
+  tasks:
+
+    - sysctl: name="net.ipv4.ip_forward" value=1 state=present sysctl_set=yes
+    - sysctl: name="net.ipv4.conf.all.accept_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.all.send_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.eth0.accept_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.default.accept_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.lo.accept_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.eth0.send_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.default.send_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.lo.send_redirects" value=0 state=present reload=no
+    
+    - name: "Restart networking"
+      service: name=network state=restarted
+    - name: "Start OpenSwan"
+      service: name=ipsec state=restarted enabled=yes
