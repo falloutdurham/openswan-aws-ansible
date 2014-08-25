@@ -1,0 +1,34 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  gather_facts: false
+  vars:
+    vpc_cidr: "10.0.0.0/16"
+    cidr_public: "10.0.1.0/8"
+    cidr_private: "10.0.0.0/8"
+    east_cidr:
+    ipsec_tunnel_instance:
+  tasks:
+  - name: "Create VPC"
+      local_action:
+        module: ec2_vpc
+        state: present
+        cidr_block: {{ vpc_cidr }}
+        resource_tags: { "Environment":"Development" }
+        subnets:
+          - cidr: {{ cidr_public }}
+            resource_tags: { "Environment":"Public Subnet"}
+          - cidr: {{ cidr_private }}
+            resource_tags: { "Environment":"Private Subnet"}
+        internet_gateway: True
+        route_tables:
+          - subnets:
+              - {{ cidr_private }}
+              - {{ cidr_public }}
+            routes:
+              - dest: 0.0.0.0/0
+                gw: igw
+              - dest: {{ east_cidr }}
+                gw: {{ ipsec_tunnel_instance }}
+        region: us-west-1
+      register: vpc
