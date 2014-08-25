@@ -1,0 +1,22 @@
+- name: Configure instance(s)
+  hosts: staging_openswan
+  sudo: True
+  user: ec2-user
+  tasks:
+    - name: "Install OpenSwan RPM"
+      yum: name=openswan state=latest
+  
+    - name: "Add IPSec Config"
+      copy:
+        src=files/ipsec.conf
+        dest=/etc/ipsec.conf
+        owner=root group=root mode=0644
+    - sysctl: name="net.ipv4.ip_forward" value=1 state=present sysctl_set=yes reload=no
+    - sysctl: name="net.ipv4.conf.all.accept_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.all.send_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.eth0.accept_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.default.accept_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.lo.accept_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.eth0.send_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.default.send_redirects" value=0 state=present reload=no
+    - sysctl: name="net.ipv4.conf.lo.send_redirects" value=0 state=present reload=no

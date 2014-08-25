@@ -1,9 +1,25 @@
 [vpc_ipsec]
-54.164.60.103
-54.201.178.29
+54.164.153.196
+54.191.96.188
 
 [vpc_east_ipsec]
-54.164.60.103
+54.164.153.196
 
 [vpc_west_ipsec]
-54.201.178.29
+54.191.96.188
+
+[vpc_ipsec:vars]
+east_region=us-east-1
+west_region=us-west-2
+
+east_security_group=sg-e2792f87
+east_subnet=subnet-1a628843
+east_subnet_cidr=10.0.0.0/16
+east_vpc_id=vpc-0408a061
+west_subnet_cidr=10.0.3.0/16
+west_security_group=sg-9bfb79fe
+west_subnet=subnet-c6ffe880
+west_name_tag=OpenSWANWest
+
+[staging_openswan]
+54.88.178.108

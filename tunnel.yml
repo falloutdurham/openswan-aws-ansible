@@ -1,0 +1,112 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  gather_facts: false
+
+- name: Install East Tunnel Config
+  hosts: vpc_east_ipsec
+  sudo: true
+  gather_facts: no
+  user: ec2-user
+
+  tasks: 
+
+    - name: "Install VPC East<->West Tunnel Config"
+      template: 
+        src=files/vpc_east_to_vpc_west.conf
+        dest=/etc/ipsec.d/vpc_east_to_vpc_west.conf
+        owner=root group=root mode=0600
+    - name: "Install VPC East<->West Tunnel Secrets"
+      template:
+        src=files/vpc_east_to_vpc_west.secrets
+        dest=/etc/ipsec.d/vpc_east_to_vpc_west.secrets
+        owner=root group=root mode=0600
+
+- hosts: vpc_west_ipsec  
+  sudo: true
+  gather_facts: no
+  user: ec2-user
+
+  tasks: 
+
+    - name: "Install VPC West<->East Tunnel Config"
+      template: 
+        src=files/vpc_west_to_vpc_east.conf
+        dest=/etc/ipsec.d/vpc_west_to_vpc_east.conf
+        owner=root group=root mode=0600
+    - name: "Install VPC West<->East Tunnel Secrets"
+      template: 
+        src=files/vpc_west_to_vpc_east.secrets
+        dest=/etc/ipsec.d/vpc_west_to_vpc_east.secrets
+        owner=root group=root mode=0600
+
+
+- hosts: vpc_ipsec
+  connection: local
+  vars:
+    east_ipsec: 54.164.153.196
+    west_ipsec: 54.191.96.188
+
+  gather_facts: no
+  tasks:
+    #- name: "Restart networking"
+    #  service: name=network state=restarted
+    #- name: "Start OpenSwan"
+    #  service: name=ipsec state=restarted enabled=yes
+
+    - name: Update East Security Group
+      local_action:
+        module: ec2_group
+        name: VPC-East-West-OpenSWAN-Tunnel
+        description: an example EC2 group
+        vpc_id: '{{ east_vpc_id }}'
+        region: '{{ east_region }}'
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: udp
+            from_port: 500
+            to_port: 500
+            cidr_ip: '{{west_ipsec}}/32'
+          - proto: udp
+            from_port: 4500
+            to_port: 4500
+            cidr_ip: '{{west_ipsec}}/32'
+          - proto: tcp
+            from_port: 50
+            to_port: 50
+            cidr_ip: '{{west_ipsec}}/32'
+          - proto: tcp
+            from_port: 51
+            to_port: 51
+            cidr_ip: '{{west_ipsec}}/32'
+    - name: Update West Security Group
+      local_action:
+        module: ec2_group
+        name: VPC-West-East-OpenSWAN-Tunnel
+        description: an example EC2 group
+        vpc_id: '{{ west_vpc_id }}'
+        region: '{{ west_region }}'
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: udp
+            from_port: 500
+            to_port: 500
+            cidr_ip: '{{east_ipsec}}/32'
+          - proto: udp
+            from_port: 4500
+            to_port: 4500
+            cidr_ip: '{{east_ipsec}}/32'
+          - proto: tcp
+            from_port: 50
+            to_port: 50
+            cidr_ip: '{{east_ipsec}}/32'
+          - proto: tcp
+            from_port: 51
+            to_port: 51
+            cidr_ip: '{{east_ipsec}}/32'            

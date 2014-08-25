@@ -1,10 +1,104 @@
 ---
-- hosts: vpc_ipsec
-  sudo: true
-  gather_facts: no
+- hosts: 127.0.0.1
+  connection: local
+  gather_facts: false
+  vars:
+    east_region: us-east-1
+    west_region: us-west-2
+    east_vpc_id: vpc-0408a061
+
+    east_security_group: sg-e2792f87
+    east_subnet: subnet-1a628843
+    east_name_tag: OpenSWANEast
+    east_subnet_cidr: 10.0.0.0/16
+    west_subnet_cidr: 10.0.3.0/16
+    west_security_group: sg-9bfb79fe
+    west_subnet: subnet-c6ffe880
+    west_name_tag: OpenSWANWest
+
+  tasks:
+  - name: "Create East Security Group"
+    local_action:
+        module: ec2_group
+        name: VPC-East-West-OpenSWAN-Tunnel
+        description: an example EC2 group
+        vpc_id: '{{ east_vpc_id }}'
+        region: '{{ east_region }}'
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+  - name: "Launch VPN VPC-East Instance"
+    local_action:
+      module: ec2
+      region: "{{east_region}}"
+      keypair: openswan
+      group: VPC-East-West-OpenSWAN-Tunnel
+      instance_type: t2.small
+      image: ami-76817c1e
+      wait: yes
+      vpc_subnet_id: "{{ east_subnet }}"
+      source_dest_check: false
+      assign_public_ip: yes
+      instance_tags:
+        Name: "{{ east_name_tag }}"
+    register: east
+  - name: Add new instance to host group
+    local_action: add_host hostname={{ item.public_ip }} groupname=launched
+    with_items: east.instances
+  - name: Add new instance to host group east_ipsec
+    local_action: add_host hostname={{ item.public_ip }} groupname=east_ipsec
+    with_items: east.instances
+  
+  - name: Wait for SSH to come up
+    local_action: wait_for host={{ item.public_dns_name }} port=22 delay=60 timeout=320 state=started
+    with_items: east.instances    
+  - name: "Create West Security Group"
+    local_action:
+        module: ec2_group
+        name: VPC-West-East-OpenSWAN-Tunnel
+        description: an example EC2 group
+        vpc_id: '{{ west_vpc_id }}'
+        region: '{{ west_region }}'
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+  - name: "Launch VPN VPC-West Instance"
+    local_action:
+      module: ec2
+      region: "{{west_region}}"
+      keypair: housepi
+      group: VPC-West-East-OpenSWAN-Tunnel
+      instance_type: t2.small
+      image: ami-d13845e1
+      wait: yes
+      vpc_subnet_id: "{{ west_subnet }}"
+      source_dest_check: false
+      assign_public_ip: yes
+      instance_tags:
+        Name: "{{ west_name_tag }}"
+    register: west
+  - name: Add new instance to host group
+    local_action: add_host hostname={{ item.public_ip }} groupname=launched
+    with_items: west.instances
+  - name: Add new instance to host group west_ipsec
+    local_action: add_host hostname={{ item.public_ip }} groupname=west_ipsec
+    with_items: west.instances
+
+
+  - name: Wait for SSH to come up
+    local_action: wait_for host={{ item.public_dns_name }} port=22 delay=60 timeout=320 state=started
+    with_items: west.instances
+
+
+- name: Configure instance(s)
+  hosts: launched
+  sudo: True
   user: ec2-user
-  tasks: 
-    
+  tasks:
     - name: "Install OpenSwan RPM"
       yum: name=openswan state=latest
   
@@ -13,52 +107,7 @@
         src=files/ipsec.conf
         dest=/etc/ipsec.conf
         owner=root group=root mode=0644
-
-- hosts: vpc_east_ipsec  
-  sudo: true
-  gather_facts: no
-  user: ec2-user
-
-  tasks: 
-
-    - name: "Install VPC East<->West Tunnel Config"
-      copy: 
-        src=files/vpc_east_to_vpc_west.conf
-        dest=/etc/ipsec.d/vpc_east_to_vpc_west.conf
-        owner=root group=root mode=0600
-    - name: "Install VPC East<->West Tunnel Secrets"
-      copy:
-        src=files/vpc_east_to_vpc_west.secrets
-        dest=/etc/ipsec.d/vpc_east_to_vpc_west.secrets
-        owner=root group=root mode=0600
-
-- hosts: vpc_west_ipsec  
-  sudo: true
-  gather_facts: no
-  user: ec2-user
-
-  tasks: 
-
-    - name: "Install VPC West<->East Tunnel Config"
-      copy: 
-        src=files/vpc_west_to_vpc_east.conf
-        dest=/etc/ipsec.d/vpc_west_to_vpc_east.conf
-        owner=root group=root mode=0600
-    - name: "Install VPC West<->East Tunnel Secrets"
-      copy: 
-        src=files/vpc_west_to_vpc_east.secrets
-        dest=/etc/ipsec.d/vpc_west_to_vpc_east.secrets
-        owner=root group=root mode=0600
-
-
-- hosts: vpc_ipsec
-  sudo: true
-  gather_facts: no
-  user: ec2-user
-
-  tasks:
-
-    - sysctl: name="net.ipv4.ip_forward" value=1 state=present sysctl_set=yes
+    - sysctl: name="net.ipv4.ip_forward" value=1 state=present sysctl_set=yes reload=no
     - sysctl: name="net.ipv4.conf.all.accept_redirects" value=0 state=present reload=no
     - sysctl: name="net.ipv4.conf.all.send_redirects" value=0 state=present reload=no
     - sysctl: name="net.ipv4.conf.eth0.accept_redirects" value=0 state=present reload=no
@@ -68,7 +117,60 @@
     - sysctl: name="net.ipv4.conf.default.send_redirects" value=0 state=present reload=no
     - sysctl: name="net.ipv4.conf.lo.send_redirects" value=0 state=present reload=no
     
-    - name: "Restart networking"
-      service: name=network state=restarted
-    - name: "Start OpenSwan"
-      service: name=ipsec state=restarted enabled=yes
+
+# - name: Install East Tunnel Config
+#   hosts: east_ipsec
+#   sudo: true
+#   gather_facts: no
+#   user: ec2-user
+
+#   tasks: 
+
+#     - name: "Install VPC East<->West Tunnel Config"
+#       template: src=templates/vpc_east_to_vpc_west.conf dest=/etc/ipsec.d/vpc_east_to_vpc_west.conf owner=root group=root mode=0600
+#     - name: "Install VPC East<->West Tunnel Secrets"
+#       copy:
+#         src=files/vpc_east_to_vpc_west.secrets
+#         dest=/etc/ipsec.d/vpc_east_to_vpc_west.secrets
+#         owner=root group=root mode=0600
+
+# - hosts: vpc_west_ipsec  
+#   sudo: true
+#   gather_facts: no
+#   user: ec2-user
+
+#   tasks: 
+
+#     - name: "Install VPC West<->East Tunnel Config"
+#       copy: 
+#         src=files/vpc_west_to_vpc_east.conf
+#         dest=/etc/ipsec.d/vpc_west_to_vpc_east.conf
+#         owner=root group=root mode=0600
+#     - name: "Install VPC West<->East Tunnel Secrets"
+#       copy: 
+#         src=files/vpc_west_to_vpc_east.secrets
+#         dest=/etc/ipsec.d/vpc_west_to_vpc_east.secrets
+#         owner=root group=root mode=0600
+
+
+- hosts: vpc_ipsec
+  sudo: true
+  gather_facts: no
+  user: ec2-user
+
+  tasks:
+
+    # - sysctl: name="net.ipv4.ip_forward" value=1 state=present sysctl_set=yes
+    # - sysctl: name="net.ipv4.conf.all.accept_redirects" value=0 state=present reload=no
+    # - sysctl: name="net.ipv4.conf.all.send_redirects" value=0 state=present reload=no
+    # - sysctl: name="net.ipv4.conf.eth0.accept_redirects" value=0 state=present reload=no
+    # - sysctl: name="net.ipv4.conf.default.accept_redirects" value=0 state=present reload=no
+    # - sysctl: name="net.ipv4.conf.lo.accept_redirects" value=0 state=present reload=no
+    # - sysctl: name="net.ipv4.conf.eth0.send_redirects" value=0 state=present reload=no
+    # - sysctl: name="net.ipv4.conf.default.send_redirects" value=0 state=present reload=no
+    # - sysctl: name="net.ipv4.conf.lo.send_redirects" value=0 state=present reload=no
+    
+#     - name: "Restart networking"
+#       service: name=network state=restarted
+#     - name: "Start OpenSwan"
+#       service: name=ipsec state=restarted enabled=yes
